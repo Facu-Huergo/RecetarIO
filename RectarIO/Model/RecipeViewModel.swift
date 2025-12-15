@@ -14,7 +14,13 @@ class RecipeViewModel: ObservableObject {
         recipes.append(recipe)
         saveRecipes()
     }
-    
+    func deleteRecipe(_ recipe : Recipe)
+    {
+        recipes.removeAll{$0.id == recipe.id}
+        favorites.remove(recipe.id)
+        saveRecipes()
+        saveFavorites()
+    }
     func updateRecipe(_ recipe: Recipe) {
         if let index = recipes.firstIndex(where: { $0.id == recipe.id }) {
             recipes[index] = recipe
