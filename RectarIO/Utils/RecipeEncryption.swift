@@ -5,7 +5,6 @@ import CryptoKit
 class RecipeEncryption {
     
     // Clave simétrica para encriptar/desencriptar
-    // En producción, esta clave debería ser más compleja o generada dinámicamente
     private static let encryptionKey = "RecetarIO2025Key"
     
     // MARK: - Encriptar Receta
@@ -61,34 +60,63 @@ class RecipeEncryption {
     // MARK: - Validar Archivo .rio
     /// Verifica si un archivo tiene formato válido de RecetarIO
     static func isValidRIOFile(data: Data) -> Bool {
-        // Intentamos desencriptar y ver si obtenemos una receta válida
         return decrypt(data: data) != nil
     }
     
     // MARK: - Crear archivo .rio
     /// Exporta una receta a un archivo .rio encriptado
     static func exportToRIO(recipe: Recipe) -> URL? {
+        print("🔐 Iniciando encriptación de: \(recipe.title)")
+        
         guard let encryptedData = encrypt(recipe: recipe) else {
             print("❌ No se pudo encriptar la receta")
             return nil
         }
         
-        // Crear nombre de archivo seguro
+        print("✅ Datos encriptados: \(encryptedData.count) bytes")
+        
+        // Crear nombre de archivo seguro (sin caracteres especiales)
         let safeTitle = recipe.title
             .replacingOccurrences(of: " ", with: "_")
             .replacingOccurrences(of: "/", with: "-")
+            .replacingOccurrences(of: "\\", with: "-")
+            .replacingOccurrences(of: ":", with: "-")
+            .replacingOccurrences(of: "*", with: "-")
+            .replacingOccurrences(of: "?", with: "-")
+            .replacingOccurrences(of: "\"", with: "-")
+            .replacingOccurrences(of: "<", with: "-")
+            .replacingOccurrences(of: ">", with: "-")
+            .replacingOccurrences(of: "|", with: "-")
             .lowercased()
         
         let fileName = "\(safeTitle).rio"
         let tempDir = FileManager.default.temporaryDirectory
         let fileURL = tempDir.appendingPathComponent(fileName)
         
+        print("📁 Intentando escribir en: \(fileURL.path)")
+        
         do {
-            try encryptedData.write(to: fileURL)
-            print("✅ Archivo .rio creado: \(fileName)")
+            // Eliminar archivo anterior si existe
+            if FileManager.default.fileExists(atPath: fileURL.path) {
+                try FileManager.default.removeItem(at: fileURL)
+                print("🗑️ Archivo anterior eliminado")
+            }
+            
+            // Escribir nuevo archivo
+            try encryptedData.write(to: fileURL, options: .atomic)
+            
+            // Verificar que se escribió correctamente
+            let fileSize = try FileManager.default.attributesOfItem(atPath: fileURL.path)[.size] as? Int ?? 0
+            print("✅ Archivo .rio creado exitosamente")
+            print("   Nombre: \(fileName)")
+            print("   Tamaño: \(fileSize) bytes")
+            print("   Ubicación: \(fileURL.path)")
+            
             return fileURL
+            
         } catch {
             print("❌ Error al escribir archivo: \(error.localizedDescription)")
+            print("   Error detallado: \(error)")
             return nil
         }
     }

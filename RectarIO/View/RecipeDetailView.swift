@@ -6,8 +6,6 @@ struct RecipeDetailView: View {
     
     @State private var multiplier: Double = 1.0
     @State private var showingEditSheet = false
-    @State private var showingShareSheet = false
-    @State private var shareURL: URL?
     
     // Decodificar ingredientes desde el JSON guardado
     private var ingredients: [Ingredient] {
@@ -119,8 +117,8 @@ struct RecipeDetailView: View {
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
                 HStack(spacing: 16) {
-                    // Botón de compartir
-                    Button(action: shareRecipe) {
+                    // Botón de compartir - DIRECTO
+                    Button(action: shareRecipeDirectly) {
                         Image(systemName: "square.and.arrow.up")
                             .font(.title3)
                             .foregroundColor(.blue)
@@ -140,45 +138,95 @@ struct RecipeDetailView: View {
         .sheet(isPresented: $showingEditSheet) {
             EditRecipeView(recipe: recipe, viewModel: viewModel)
         }
-        .sheet(isPresented: $showingShareSheet, onDismiss: {
-            if let url = shareURL {
-                try? FileManager.default.removeItem(at: url)
-            }
-        }) {
-            if let url = shareURL {
-                ShareSheet(items: [url])
-            }
-        }
     }
     
-    private func shareRecipe() {
-        do {
-            // 1. Codificar la receta a datos JSON
-            let encoded = try JSONEncoder().encode(recipe)
+    // MARK: - 🔒 Compartir Receta DIRECTO
+    private func shareRecipeDirectly() {
+        print("🔄 Iniciando compartir directo...")
+        
+        // 1. Crear archivo .rio
+        guard let fileURL = viewModel.exportRecipe(recipe) else {
+            print("❌ Error al generar archivo .rio")
+            return
+        }
+        
+        print("✅ Archivo creado: \(fileURL.lastPathComponent)")
+        print("📍 Path: \(fileURL.path)")
+        
+        // 2. Verificar existencia
+        guard FileManager.default.fileExists(atPath: fileURL.path) else {
+            print("❌ El archivo no existe")
+            return
+        }
+        
+        // 3. Obtener el rootViewController
+        guard let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+              let window = windowScene.windows.first(where: { $0.isKeyWindow }),
+              let rootVC = window.rootViewController else {
+            print("❌ No se pudo obtener el rootViewController")
+            return
+        }
+        
+        // 4. Encontrar el viewController presentado (si hay navegación)
+        var topVC = rootVC
+        while let presentedVC = topVC.presentedViewController {
+            topVC = presentedVC
+        }
+        
+        print("📱 ViewController encontrado: \(type(of: topVC))")
+        
+        // 5. Crear mensaje y items
+        let message = "¡Te comparto mi receta de \(recipe.title)! 👨‍🍳\n\nÁbrela con RecetarIO"
+        let items: [Any] = [message, fileURL]
+        
+        print("📦 Items a compartir: \(items.count)")
+        print("   - Mensaje: \(message.prefix(50))...")
+        print("   - Archivo: \(fileURL.lastPathComponent)")
+        
+        // 6. Crear UIActivityViewController
+        let activityVC = UIActivityViewController(
+            activityItems: items,
+            applicationActivities: nil
+        )
+        
+        // 7. Configuración para iPad (popover)
+        if let popover = activityVC.popoverPresentationController {
+            popover.sourceView = topVC.view
+            popover.sourceRect = CGRect(
+                x: topVC.view.bounds.midX,
+                y: topVC.view.bounds.midY,
+                width: 0,
+                height: 0
+            )
+            popover.permittedArrowDirections = []
+        }
+        
+        // 8. Callback de completado
+        activityVC.completionWithItemsHandler = { activityType, completed, returnedItems, error in
             
-            // 2. Crear una ruta de archivo temporal
-            // Usamos un nombre de archivo único con extensión .json
-            let safeTitle = recipe.title.replacingOccurrences(of: " ", with: "_").lowercased()
-            let fileName = "\(safeTitle).json"
-            let tempDir = FileManager.default.temporaryDirectory
-            let fileURL = tempDir.appendingPathComponent(fileName)
+            // Limpiar archivo temporal
+            try? FileManager.default.removeItem(at: fileURL)
             
-            // 3. Escribir los datos JSON en el archivo
-            try encoded.write(to: fileURL)
-            
-            // 4. Asignar la URL a la variable de estado.
-            // Esto automáticamente activará el .sheet en el body.
-            self.shareURL = fileURL
-            self.showingShareSheet = true
-            
-        } catch {
-            print("❌ Error al generar archivo para compartir: \(error)")
-            self.shareURL = nil
+            if let error = error {
+                print("❌ Error: \(error.localizedDescription)")
+            } else if completed {
+                print("✅ Compartido vía: \(activityType?.rawValue ?? "unknown")")
+            } else {
+                print("ℹ️ Usuario canceló")
+            }
+        }
+        
+        // 9. Presentar con delay para asegurar que la UI esté lista
+        DispatchQueue.main.async {
+            print("📤 Presentando ActivityViewController...")
+            topVC.present(activityVC, animated: true) {
+                print("✅ ActivityViewController presentado correctamente")
+            }
         }
     }
 }
 
-// Preview
+// MARK: - Preview
 #Preview {
     NavigationView {
         RecipeDetailView(
